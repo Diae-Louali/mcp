@@ -5,12 +5,19 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Load environment variables from .env file
+# Resolve project root (parent of `src/`) and load env
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv()
 
 # --- Logging Configuration ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-LOG_FILE_PATH = os.getenv("LOG_FILE", "logs/mcp_server.log")
+_env_log_file = os.getenv("LOG_FILE", "logs/mcp_server.log")
+# If LOG_FILE is relative, anchor it to the project root so logs always live in this repo
+LOG_FILE_PATH = (
+    PROJECT_ROOT / _env_log_file
+    if not os.path.isabs(_env_log_file)
+    else Path(_env_log_file)
+)
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", 10 * 1024 * 1024))
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", 5))
 
@@ -19,7 +26,9 @@ root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
 # Create formatter
-log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # Remove existing handlers to avoid duplication if script is reloaded
 for handler in root_logger.handlers[:]:
@@ -35,9 +44,7 @@ log_file = Path(LOG_FILE_PATH)
 log_file.parent.mkdir(parents=True, exist_ok=True)
 
 file_handler = RotatingFileHandler(
-    log_file,
-    maxBytes=LOG_MAX_BYTES,
-    backupCount=LOG_BACKUP_COUNT
+    str(log_file), maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
 )
 file_handler.setFormatter(log_formatter)
 root_logger.addHandler(file_handler)
@@ -70,25 +77,37 @@ HF_MODEL = os.getenv("HF_MODEL")
 
 # --- Validation ---
 if not all([DB_USER, DB_PASSWORD]):
-    logger.error("Database credentials (DB_USER, DB_PASSWORD) not found in environment variables or .env file.")
+    logger.error(
+        "Database credentials (DB_USER, DB_PASSWORD) not found in environment variables or .env file."
+    )
 
 # Embedding Provider and Keys
 logger.info(f"Selected Embedding Provider: {EMBEDDING_PROVIDER}")
 if EMBEDDING_PROVIDER == "openai":
     if not OPENAI_API_KEY:
         logger.error("EMBEDDING_PROVIDER is 'openai' but OPENAI_API_KEY is missing.")
-        raise ValueError("OpenAI API key is required when EMBEDDING_PROVIDER is 'openai'.")
+        raise ValueError(
+            "OpenAI API key is required when EMBEDDING_PROVIDER is 'openai'."
+        )
 elif EMBEDDING_PROVIDER == "gemini":
     if not GEMINI_API_KEY:
         logger.error("EMBEDDING_PROVIDER is 'gemini' but GEMINI_API_KEY is missing.")
-        raise ValueError("Gemini API key is required when EMBEDDING_PROVIDER is 'gemini'.")
+        raise ValueError(
+            "Gemini API key is required when EMBEDDING_PROVIDER is 'gemini'."
+        )
 elif EMBEDDING_PROVIDER == "huggingface":
     if not HF_MODEL:
         logger.error("EMBEDDING_PROVIDER is 'huggingface' but HF_MODEL is missing.")
-        raise ValueError("HuggingFace model is required when EMBEDDING_PROVIDER is 'huggingface'.")
+        raise ValueError(
+            "HuggingFace model is required when EMBEDDING_PROVIDER is 'huggingface'."
+        )
 else:
     EMBEDDING_PROVIDER = None
-    logger.info(f"No EMBEDDING_PROVIDER selected or it is set to None. Disabling embedding features.")
+    logger.info(
+        f"No EMBEDDING_PROVIDER selected or it is set to None. Disabling embedding features."
+    )
 
 logger.info(f"Read-only mode: {MCP_READ_ONLY}")
-logger.info(f"Logging to console and to file: {LOG_FILE_PATH} (Level: {LOG_LEVEL}, MaxSize: {LOG_MAX_BYTES}B, Backups: {LOG_BACKUP_COUNT})")
+logger.info(
+    f"Logging to console and to file: {LOG_FILE_PATH} (Level: {LOG_LEVEL}, MaxSize: {LOG_MAX_BYTES}B, Backups: {LOG_BACKUP_COUNT})"
+)

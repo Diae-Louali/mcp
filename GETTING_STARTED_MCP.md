@@ -86,3 +86,31 @@ Add to `.env` and restart the server:
   - `ss -ltnp | grep ":9101"`
 - Stop MCP:
   - `pkill -f "/home/diae/mcp/mariadb-mcp-server/src/server.py"`
+
+### Errors I had but solved
+
+- **SSE server wasn’t running** when Cursor tried to connect to `http://localhost:9101/sse`, so you got ECONNREFUSED.
+- Your logs showed earlier runs in **stdio** mode (“Starting MCP server via stdio…”), not SSE.
+- After we started SSE properly, port `9101` began listening and Cursor connected.
+
+### Contributing factors we fixed
+
+- **Runner script**: Updated `run_sse.sh` to `cd` into the project, activate the venv, and `exec` the server so `.env` is reliably loaded and the process stays attached.
+- **Permissions**: Ensured the scripts are executable.
+- **Race on checks**: Early port checks right after starting the process can be too fast; the server needs ~1s to bind.
+
+### How to avoid it next time
+
+- Start DB, then run `/home/diae/mcp/mariadb-mcp-server/run_sse.sh`.
+- Don’t run stdio and SSE for the same server at the same time.
+- If Cursor is using SSE, make sure the SSE process is up before reloading servers.
+
+- SSE now listens on `127.0.0.1:9101`; logs at `/home/diae/mcp/mariadb-mcp-server/logs/mcp_server.log`.
+
+### Gneral troubleshooting
+
+- If you get `ECONNREFUSED` when trying to connect to the SSE server, check:
+  - The server is running (port `9101` is listening)
+  - The server is configured correctly in Cursor (check `servers` in `C:\\Users\\diae\\.cursor\\mcp.json`)
+  - The server is using the correct port (check `run_sse.sh` and `run_server.sh`)
+  - The server is using the correct environment variables (check `.env`)
