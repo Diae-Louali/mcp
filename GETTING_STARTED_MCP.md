@@ -29,28 +29,21 @@ This guide shows how to use the MariaDB MCP server with Cursor against your loca
 
    - From project root: `docker compose -f /home/diae/projects/hrsuite-cloud/docker-compose.yaml up -d db`
 
-2. **Start the MCP server (SSE) in WSL**:
+2. **Start the MCP server (recommended self-healing launcher)**:
 
-   - `/home/diae/mcp/mariadb-mcp-server/run_sse.sh`
-   - If permissions are an issue, do the following:
-
-   Fixing permissions and line endings on the script, then starting the SSE server and verifying port 9101:
+   Use the new auto-fix launcher. It will fix CRLF/permissions, load `.env`, check DB reachability, pick a free port, and start SSE.
 
    ```bash
-   bash -lc 'set -e; chmod +x /home/diae/mcp/mariadb-mcp-server/run_sse.sh /home/diae/mcp/mariadb-mcp-server/run_server.sh; sed -i "s/\r$//" /home/diae/mcp/mariadb-mcp-server/run_sse.sh /home/diae/mcp/mariadb-mcp-server/run_server.sh; /home/diae/mcp/mariadb-mcp-server/run_sse.sh >/dev/null 2>&1 & echo $!; sleep 1; ss -ltnp | grep ":9101\\b" | cat'
+   /home/diae/mcp/mariadb-mcp-server/run_auto.sh
    ```
 
-   **Run**:
-
-   - Make executable and fix line endings:
+   - Optional: force stdio mode (Cursor-managed):
      ```bash
-     chmod +x /home/diae/mcp/mariadb-mcp-server/run_sse.sh /home/diae/mcp/mariadb-mcp-server/run_server.sh
-     sed -i 's/\r$//' /home/diae/mcp/mariadb-mcp-server/run_sse.sh /home/diae/mcp/mariadb-mcp-server/run_server.sh
+     /home/diae/mcp/mariadb-mcp-server/run_auto.sh stdio
      ```
-   - Start SSE and verify:
+   - Optional: request a specific port (auto-fallbacks to next free):
      ```bash
-     /home/diae/mcp/mariadb-mcp-server/run_sse.sh >/dev/null 2>&1 & disown
-     ss -ltnp | grep ":9101"
+     /home/diae/mcp/mariadb-mcp-server/run_auto.sh sse --port 9101
      ```
 
 3. **In Cursor**:
@@ -95,7 +88,7 @@ To stop the SSE server:
     "args": [
       "bash",
       "-lc",
-      "/home/diae/mcp/mariadb-mcp-server/run_server.sh"
+      "/home/diae/mcp/mariadb-mcp-server/run_auto.sh stdio"
     ],
     "timeout": 600
   }
@@ -104,8 +97,11 @@ To stop the SSE server:
 
 ## Changing port (SSE)
 
-- Edit `/home/diae/mcp/mariadb-mcp-server/run_sse.sh` and change `--port 9101` to another free port
-- Update Cursor `servers` URL to match (e.g., `http://localhost:9201/sse`)
+- Prefer using the launcher with an explicit port (it will auto-fallback to the next free one):
+  ```bash
+  /home/diae/mcp/mariadb-mcp-server/run_auto.sh sse --port 9201
+  ```
+  Then update Cursor `servers` URL to match (e.g., `http://localhost:9201/sse`).
 
 ## Enabling embeddings (optional)
 
@@ -146,3 +142,90 @@ Add to `.env` and restart the server:
   - The server is using the correct port (check `run_sse.sh` and `run_server.sh`)
   - The server is using the correct environment variables (check `.env`)
 - **Race on checks**: Early port checks right after starting the process can be too fast; the server needs ~1s to bind.
+
+## Common problems and fixes (if auto launcher fails)
+
+- **Scripts not executable or CRLF line endings**
+
+  - Symptoms: `permission denied`, or scripts behave oddly on WSL
+  - Fix:
+    ```bash
+    chmod +x /home/diae/mcp/mariadb-mcp-server/run_*.sh
+    sed -i 's/\r$//' /home/diae/mcp/mariadb-mcp-server/run_*.sh
+    ```
+
+- **Virtualenv missing or wrong Python version**
+
+  - Symptoms: `source .venv/bin/activate: No such file or directory`, module import errors
+  - Fix (Python 3.11):
+    ```bash
+    cd /home/diae/mcp/mariadb-mcp-server
+    python3.11 -m venv .venv
+    source .venv/bin/activate
+    pip install -e .
+    ```
+    Or using uv:
+    ```bash
+    uv venv
+    uv pip install -e .
+    ```
+
+- **DB not reachable**
+
+  - Symptoms: startup fails with pool init error, or logs contain `DB_UNREACHABLE`/`ECONNREFUSED`
+  - Fix:
+    ```bash
+    docker compose -f /home/diae/projects/hrsuite-cloud/docker-compose.yaml up -d db
+    ss -ltnp | grep ":3308\\b" | cat   # ensure port 3308 is published
+    ```
+    Verify `.env` points to `127.0.0.1:3308` with correct `DB_USER`/`DB_PASSWORD`.
+
+- **SSE port busy (9001/9101)**
+
+  - Symptoms: server fails to bind, logs mention `Address already in use`
+  - Fix: request a different port (launcher will auto-fallback if busy)
+    ```bash
+    /home/diae/mcp/mariadb-mcp-server/run_auto.sh sse --port 9201
+    ```
+    Update Cursor URL accordingly.
+
+- **Cursor cannot connect (ECONNREFUSED)**
+
+  - Checks:
+    - Server listening: `ss -ltnp | grep ":<port>\\b" | cat`
+    - Cursor config matches port: check `servers` in `C:\\Users\\diae\\.cursor\\mcp.json`
+    - Correct `.env` loaded; restart server after changes
+    - Give it ~1s after start before checking
+
+- **Stdio mode fails on Windows (ENOENT for WSL)**
+
+  - Fix: use explicit `wsl.exe` in `mcpServers` and call stdio via the launcher:
+    ```json
+    "MariaDB_Server": {
+      "command": "C:\\Windows\\System32\\wsl.exe",
+      "args": ["bash","-lc","/home/diae/mcp/mariadb-mcp-server/run_auto.sh stdio"],
+      "timeout": 600
+    }
+    ```
+
+- **Embedding provider errors**
+
+  - Symptoms: startup raises missing API key/model
+  - Fix: set the corresponding variables in `.env` or remove `EMBEDDING_PROVIDER` to disable embeddings
+
+- **Where to see errors**
+
+  - View logs:
+    - Launcher: `/home/diae/mcp/mariadb-mcp-server/logs/mcp_server_auto.log`
+    - Server: `/home/diae/mcp/mariadb-mcp-server/logs/mcp_server.log`
+  - Tail last lines:
+    ```bash
+    tail -n 200 /home/diae/mcp/mariadb-mcp-server/logs/mcp_server_auto.log | cat
+    tail -n 200 /home/diae/mcp/mariadb-mcp-server/logs/mcp_server.log | cat
+    ```
+
+- **Stop a stuck/old server**
+  - Fix:
+    ```bash
+    pkill -f "/home/diae/mcp/mariadb-mcp-server/src/server.py"
+    ```
