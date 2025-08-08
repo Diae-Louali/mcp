@@ -13,12 +13,18 @@ RUN pip install --no-cache-dir uv
 # Set working directory
 WORKDIR /app
 
-# Copy project files
+# Install runtime dependencies directly into system environment
+RUN uv pip install --system \
+  "asyncmy>=0.2.10" \
+  "fastmcp[cli]==2.2.8" \
+  "google-genai>=1.15.0" \
+  "google-generativeai>=0.8.5" \
+  "openai>=1.78.1" \
+  "python-dotenv>=1.1.0" \
+  "sentence-transformers>=4.1.0" \
+  "tokenizers==0.21.2"
+
 COPY . /app
+EXPOSE 9101
 
-# Install project dependencies
-RUN uv sync
-
-EXPOSE 9001
-
-CMD ["uv", "run", "src/server.py", "--host", "0.0.0.0", "--transport", "sse"]
+CMD ["python", "src/server.py", "--host", "0.0.0.0", "--transport", "sse", "--port", "9101"]

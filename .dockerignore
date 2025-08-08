@@ -1,0 +1,29 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.cache/
+**/.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+
+# Logs and artifacts
+logs/
+*.log
+
+# Local environment files (compose injects via env_file)
+.env
+
+# VCS
+.git
+.gitignore
+
+# Node / frontend (if any)
+node_modules/
+
+# uv lock (we are not using it in Docker build)
+uv.lock
